@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validador de Produto — Clear Steps</title>
+<style>
+  :root{--ink:#1c2733;--soft:#5b6b7a;--line:#e6ebf0;--go:#1e88e5;--bg:#fff;--box:#f5f8fb;--ok:#1a8f5a;--warn:#c77d00;--bad:#c62828}
+  @media(prefers-color-scheme:dark){:root{--ink:#e8eef4;--soft:#9fb0c0;--line:#25313d;--bg:#0f151b;--box:#161f28}}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg);line-height:1.55;padding:24px}
+  .wrap{max-width:640px;margin:0 auto}
+  .brand{font-weight:800;letter-spacing:2px;font-size:.72rem;color:var(--go);margin-bottom:6px}
+  h1{font-size:1.5rem;margin-bottom:4px}
+  .sub{color:var(--soft);font-size:.9rem;margin-bottom:22px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  label{display:block;font-size:.82rem;color:var(--soft);margin-bottom:4px}
+  input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--box);color:var(--ink);font-size:1rem}
+  .full{grid-column:1/-1}
+  button{width:100%;margin-top:16px;padding:14px;border:none;border-radius:10px;background:var(--go);color:#fff;font-weight:800;font-size:1rem;cursor:pointer}
+  .actions{display:grid;grid-template-columns:2fr 1fr;gap:10px}.secondary{background:transparent;color:var(--go);border:1px solid var(--go)}
+  .metrics{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .m{background:var(--box);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .m b{display:block;font-size:1.15rem}
+  .m span{font-size:.75rem;color:var(--soft)}
+  .m.good b{color:var(--ok)} .m.warn b{color:var(--warn)} .m.bad b{color:var(--bad)}
+  .verdict{margin-top:20px;border-radius:12px;padding:20px;border:2px solid}
+  .verdict h2{font-size:1.2rem;margin-bottom:6px}
+  .verdict.ok{border-color:var(--ok);background:rgba(26,143,90,.08)}
+  .verdict.warn{border-color:var(--warn);background:rgba(199,125,0,.08)}
+  .verdict.bad{border-color:var(--bad);background:rgba(198,40,40,.08)}
+  .verdict.wait{border-color:var(--soft);background:var(--box)}
+  .hidden{display:none}
+  .note{font-size:.78rem;color:var(--soft);margin-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">CLEAR STEPS</div>
+  <h1>Validador de Produto</h1>
+  <p class="sub">Digite os números do teste (7-10 dias ou ~200+ views). A ferramenta aplica a árvore de decisão e diz o veredito. Nada sai do navegador.</p>
+
+  <div class="grid">
+    <div><label>Views da página (Gumroad)</label><input id="views" type="number" min="0" value="0"></div>
+    <div><label>Vendas</label><input id="sales" type="number" min="0" value="0"></div>
+    <div><label>Quiz iniciados</label><input id="qstart" type="number" min="0" value="0"></div>
+    <div><label>Quiz completados</label><input id="qdone" type="number" min="0" value="0"></div>
+    <div><label>Cliques no CTA do resultado</label><input id="clicks" type="number" min="0" value="0"></div>
+    <div><label>Reembolsos</label><input id="refunds" type="number" min="0" value="0"></div>
+    <div><label>Chargebacks (disputas)</label><input id="cb" type="number" min="0" value="0"></div>
+    <div><label>Order bumps aceitos</label><input id="bumps" type="number" min="0" value="0"></div>
+    <div><label>Upsells aceitos</label><input id="ups" type="number" min="0" value="0"></div>
+    <div><label>Receita total (US$)</label><input id="rev" type="number" min="0" step="0.01" value="0"></div>
+    <div><label>Gasto com tráfego (US$)</label><input id="spend" type="number" min="0" step="0.01" value="0"></div>
+    <div><label>Taxa percentual estimada (%)</label><input id="feePct" type="number" min="0" step="0.1" value="12.9"></div>
+    <div><label>Taxa fixa por venda (US$)</label><input id="feeFixed" type="number" min="0" step="0.01" value="0.80"></div>
+  </div>
+  <div class="actions"><button onclick="run()">Calcular veredito</button><button class="secondary" onclick="exportSnapshot()">Exportar JSON</button></div>
+
+  <div id="out" class="hidden">
+    <div class="metrics" id="metrics"></div>
+    <div id="verdict" class="verdict"></div>
+  </div>
+
+  <p class="note">Os pisos são hipóteses de decisão, não garantias. “Escalar” exige amostra suficiente, margem positiva e entrega saudável. Taxas padrão refletem venda direta estimada no Gumroad (10% + US$0,50 e cartão 2,9% + US$0,30); confirme sempre pelo CSV real.</p>
+</div>
+
+<script>
+function pct(a, b){ return b > 0 ? (a / b * 100) : 0; }
+function fmt(x){ return (Math.round(x * 10) / 10) + "%"; }
+
+function metricCard(label, value, cls){
+  return `<div class="m ${cls}"><b>${value}</b><span>${label}</span></div>`;
+}
+
+function run(){
+  const v = id => Math.max(0, parseFloat(document.getElementById(id).value) || 0);
+  const views=v("views"), sales=v("sales"), qstart=v("qstart"), qdone=v("qdone"),
+        clicks=v("clicks"), refunds=v("refunds"), cb=v("cb"), bumps=v("bumps"),
+        ups=v("ups"), rev=v("rev"), spend=v("spend"), feePct=v("feePct"),
+        feeFixed=v("feeFixed");
+
+  const conv = pct(sales, views);
+  const qComplete = pct(qdone, qstart);
+  const ctr = pct(clicks, qdone);
+  const refundR = pct(refunds, sales);
+  const cbR = pct(cb, sales);
+  const bumpR = pct(bumps, sales);
+  const upsR = pct(ups, sales);
+  const aov = sales > 0 ? rev / sales : 0;
+  const fees = rev * feePct / 100 + sales * feeFixed;
+  const net = rev - fees - spend;
+  const cac = sales > 0 ? spend / sales : 0;
+  const roas = spend > 0 ? rev / spend : 0;
+
+  const M = document.getElementById("metrics");
+  M.innerHTML =
+    metricCard("Conversão view→venda", fmt(conv), conv>=1.5?"good":conv>=0.8?"warn":"bad") +
+    metricCard("Quiz completado", fmt(qComplete), qComplete>=60?"good":qComplete>=40?"warn":"bad") +
+    metricCard("CTR quiz→checkout", fmt(ctr), ctr>=30?"good":ctr>=20?"warn":"bad") +
+    metricCard("Reembolso", fmt(refundR), refundR<8?"good":refundR<15?"warn":"bad") +
+    metricCard("Chargeback", fmt(cbR), cbR<1?"good":"bad") +
+    metricCard("Order bump", fmt(bumpR), bumpR>=20?"good":"warn") +
+    metricCard("Upsell", fmt(upsR), upsR>=8?"good":"warn") +
+    metricCard("Ticket médio (AOV)", "$"+aov.toFixed(2), "") +
+    metricCard("Resultado estimado", "$"+net.toFixed(2), net>0?"good":net===0?"warn":"bad") +
+    metricCard("CAC por venda", "$"+cac.toFixed(2), "") +
+    metricCard("ROAS", spend>0?roas.toFixed(2)+"x":"—", roas>=2?"good":roas>=1?"warn":"bad");
+
+  // Árvore de decisão (ordem de prioridade)
+  let cls, title, body;
+  if (sales >= 5 && (refundR > 15 || cbR > 1)) {
+    cls="bad"; title="🔴 PROBLEMA DE ENTREGA";
+    body="Reembolso ou chargeback alto demais. PARE o tráfego agora. Revise entrega, promessa e suporte antes de gastar mais. Disputas e compras suspeitas entram na revisão de legitimidade e podem afetar payout ou continuidade da conta.";
+  } else if (views < 150 && sales < 3) {
+    cls="wait"; title="⏳ AINDA SEM DADOS SUFICIENTES";
+    body="Poucas views pra concluir. Continue trazendo tráfego até ~200 views ou 7-10 dias. Não decida nada ainda — número pequeno engana.";
+  } else if (qstart > 10 && qComplete < 40) {
+    cls="warn"; title="🟡 O QUIZ/ÂNGULO ESTÁ ERRADO";
+    body="A maioria abandona o quiz. O gancho do anúncio não casa com o quiz, ou as perguntas são longas/confusas. Ação: trocar o gancho do anúncio ou simplificar as perguntas. Veja em qual pergunta a pessoa some.";
+  } else if (qdone > 10 && ctr < 20) {
+    cls="warn"; title="🟡 A PÁGINA DE RESULTADO/OFERTA NÃO CONECTA";
+    body="As pessoas completam o quiz mas não clicam pra comprar. A recomendação personalizada ou a oferta não convence. Ação: reformular a página de resultado (diagnóstico mais afiado) ou a oferta.";
+  } else if (conv < 1) {
+    cls="warn"; title="🟡 A PÁGINA DO GUMROAD OU O PREÇO TRAVAM";
+    body="Gente clica pra comprar mas não fecha. A descrição do Gumroad, o preço ou a falta de garantia visível estão travando. Ação: reescrever a descrição, reforçar a garantia de 7 dias, testar o preço.";
+  } else if (conv >= 1.5 && net <= 0 && spend > 0) {
+    cls="warn"; title="🟡 CONVERTE, MAS A ECONOMIA NÃO FECHA";
+    body="A oferta gera vendas, porém o resultado estimado ainda é zero ou negativo depois de taxas e tráfego. Não escale. Ajuste criativo, público, preço ou AOV e valide novamente com uma única mudança por teste.";
+  } else if (conv >= 1.5) {
+    cls="ok"; title="🟢 PRODUTO VALIDADO";
+    body="Conversão acima do piso frio. A oferta funciona. Próximos passos NA ORDEM: (1) produzir o bump e o upsell pra subir o AOV; (2) ligar tráfego pago pequeno ($5-10/dia) com o criativo vencedor; (3) só então replicar — Onda 2 (espanhol) ou próximo produto. A receita financia o próximo, não seu crédito.";
+  } else {
+    cls="warn"; title="🟡 NA FRONTEIRA (0,8-1,5%)";
+    body="Converte, mas fraco. Vale iterar a página/oferta antes de escalar. Pequenos ajustes (headline, garantia, prova) podem empurrar pra cima do piso. Não escale ainda; otimize.";
+  }
+
+  document.getElementById("verdict").className = "verdict " + cls;
+  document.getElementById("verdict").innerHTML = `<h2>${title}</h2><p>${body}</p>`;
+  document.getElementById("out").classList.remove("hidden");
+}
+
+function exportSnapshot(){
+  run();
+  const ids=["views","sales","qstart","qdone","clicks","refunds","cb","bumps","ups","rev","spend","feePct","feeFixed"];
+  const data={capturedAt:new Date().toISOString(),product:"The Reset Week",source:"Clear Steps Validator",inputs:Object.fromEntries(ids.map(id=>[id,Number(document.getElementById(id).value)||0])),verdict:document.querySelector("#verdict h2")?.textContent||""};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`validacao-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
